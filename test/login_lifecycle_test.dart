@@ -82,6 +82,73 @@ void main() {
     }
   });
 
+  testWidgets(
+    'small-screen feedback opens this repository in an external browser',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      Map<dynamic, dynamic>? launchArguments;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'),
+        (call) async {
+          if (call.method == 'launch') launchArguments = call.arguments as Map;
+          return true;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          null,
+        ),
+      );
+      await tester.pumpWidget(loginHost());
+      await tester.tap(find.text('Open login'));
+      await tester.pumpAndSettle();
+      final feedback = find.widgetWithText(TextButton, '反馈问题');
+      expect(tester.getRect(feedback).right, lessThanOrEqualTo(320));
+      expect(tester.getRect(feedback).bottom, lessThanOrEqualTo(568));
+      expect(tester.takeException(), isNull);
+      await tester.tap(feedback);
+      await tester.pumpAndSettle();
+      expect(
+        launchArguments?['url'],
+        'https://github.com/jumao555/TronClass-Plus/issues/new',
+      );
+      expect(launchArguments?['useWebView'], isFalse);
+      expect(launchArguments?['useSafariVC'], isFalse);
+      expect(find.byType(LoginPage), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('a failed feedback launch leaves login usable', (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/url_launcher'),
+      (_) async => false,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'),
+        null,
+      ),
+    );
+    await tester.pumpWidget(loginHost());
+    await tester.tap(find.text('Open login'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('反馈问题'));
+    await tester.pumpAndSettle();
+    expect(find.text('无法打开 GitHub，请稍后重试'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField).first, 'test-user');
+    expect(find.text('test-user'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('nested login pages keep independent form keys and input state', (
     tester,
   ) async {

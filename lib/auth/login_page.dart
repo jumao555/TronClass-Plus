@@ -1,11 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:tronclass/auth/login_controller.dart';
 import 'package:tronclass/routes.dart';
 
 class LoginPage extends StatelessWidget {
   const LoginPage({super.key});
+
+  Future<void> _openIssue(BuildContext context) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        Uri.parse('https://github.com/jumao555/TronClass-Plus/issues/new'),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // A missing browser must not interrupt the login page.
+    }
+    if (!opened &&
+        context.mounted &&
+        ModalRoute.of(context)?.isCurrent == true) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('无法打开 GitHub，请稍后重试')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +53,34 @@ class LoginPage extends StatelessWidget {
       builder: (controller) {
         return Scaffold(
           appBar: AppBar(title: const Text('登录')),
+          bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+              ? null
+              : SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 12, bottom: 4),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      heightFactor: 1,
+                      child: Tooltip(
+                        message: '在 GitHub 提交 Issue',
+                        child: TextButton.icon(
+                          onPressed: () => _openIssue(context),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            textStyle: const TextStyle(fontSize: 11),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: const Size(0, 40),
+                          ),
+                          icon: const Icon(Icons.open_in_new, size: 12),
+                          label: const Text('反馈问题'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
           body: SingleChildScrollView(
             child: Center(
               child: ConstrainedBox(
