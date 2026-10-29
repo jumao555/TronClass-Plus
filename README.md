@@ -4,6 +4,15 @@
 [tronclass_plus](https://github.com/wilinz/tronclass_plus) 项目修改的非官方 Flutter 客户端。
 本分支主要适配重庆邮电大学的统一身份认证和 TronClass 门户，并修复登录页面生命周期问题，增加手机端扫码错误诊断。
 
+## 下载 App
+
+**[点击下载 Android APK（ARM64 调试版）](https://github.com/jumao555/TronClass-Plus/releases/latest/download/TronClass-Plus-CQUPT-android-arm64-debug.apk)**
+
+[查看版本说明和全部下载](https://github.com/jumao555/TronClass-Plus/releases)
+
+当前提供应用版本 **1.4.0**，包含重邮登录适配、登录红屏修复、扫码错误诊断和最新登录页文案。
+适用于 Android ARM64 手机，为调试签名安装包。下载 APK 后在手机上按系统提示安装即可，无需连接 Android Studio。
+
 ## 项目来源
 
 - 原作者：**[wilinz](https://github.com/wilinz)**
