@@ -6,6 +6,7 @@ import 'package:get/get.dart';
 
 import 'package:tronclass/auth/auth_controller.dart';
 import 'package:tronclass/auth/login_dialogs.dart';
+import 'package:tronclass/auth/login_diagnostics.dart';
 import 'package:tronclass/auth/saved_account_storage.dart';
 import 'package:tronclass/common/toast.dart';
 import 'package:tronclass/data/changke_client.dart';
@@ -63,19 +64,24 @@ class LoginController extends GetxController {
     final client = ChangkeClient.getInstance(username: username);
     final attemptLimit = isFirstLoginAttempt.value ? 3 : 1;
     isFirstLoginAttempt.value = false;
+    final diagnostics = LoginDiagnostics([client.dio, client.casDio]);
 
     try {
       Object? lastError;
       var authenticated = false;
       for (var attempt = 0; attempt < attemptLimit; attempt++) {
         if (!_isCurrentPage) return;
+        diagnostics.startAttempt(attempt + 1);
         try {
           await _authenticate(client, username: username, password: password);
           authenticated = true;
+          diagnostics.authenticationSucceeded();
           break;
         } on LoginCancelledException {
+          diagnostics.cancelled();
           return;
         } catch (error) {
+          diagnostics.recordError(error);
           lastError = error;
         }
       }
@@ -103,8 +109,10 @@ class LoginController extends GetxController {
       toastSuccess0('登录成功');
       Get.back(result: true);
     } catch (error) {
+      diagnostics.recordError(error);
       if (_isCurrentPage) _handleLoginError(error);
     } finally {
+      await diagnostics.finish();
       if (!isClosed) isSubmitting.value = false;
     }
   }

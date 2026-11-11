@@ -4,12 +4,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:dio/dio.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:tronclass/auth/account_manager_page.dart';
 import 'package:tronclass/auth/login_page.dart';
 import 'package:tronclass/auth/login_controller.dart';
+import 'package:tronclass/auth/login_diagnostics.dart';
 import 'package:tronclass/data/changke_client.dart';
 import 'package:tronclass/data/get_storage.dart';
 import 'package:tronclass/data/school_config.dart';
@@ -35,8 +37,63 @@ class _DelayedPortalAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+class _RejectedLoginAdapter implements HttpClientAdapter {
+  int passwordSubmissions = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    if (options.uri.path == '/user/index') {
+      final service =
+          '${SchoolConfig.identityBaseUrl}'
+          '/auth/realms/cqupt/broker/cas-client/endpoint?state=PRIVATE_STATE';
+      final login = Uri.parse(
+        '${SchoolConfig.casBaseUrl}authserver/login',
+      ).replace(queryParameters: {'service': service});
+      return ResponseBody.fromString(
+        '',
+        302,
+        headers: {
+          'location': [login.toString()],
+        },
+      );
+    }
+    if (options.uri.path == '/authserver/checkNeedCaptcha.htl') {
+      return ResponseBody.fromString('{"isNeed":false}', 200);
+    }
+    if (options.uri.path == '/authserver/login') {
+      if (options.method == 'POST') {
+        passwordSubmissions++;
+        return ResponseBody.fromString(
+          '<html><div id="showErrorTip">Login failed</div></html>',
+          401,
+          headers: {
+            'content-type': ['text/html'],
+          },
+        );
+      }
+      return ResponseBody.fromString(
+        '<html><input name="pwdEncryptSalt" value="0123456789abcdef">'
+        '<input name="execution" value="PRIVATE_EXECUTION"></html>',
+        200,
+        headers: {
+          'content-type': ['text/html'],
+        },
+      );
+    }
+    throw StateError('Unexpected mock request');
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 Widget loginHost() => GetMaterialApp(
   navigatorKey: AppRoute.navigatorKey,
+  builder: FToastBuilder(),
   defaultTransition: Transition.noTransition,
   home: Scaffold(
     body: TextButton(
@@ -144,6 +201,27 @@ void main() {
     expect(find.text('无法打开 GitHub，请稍后重试'), findsOneWidget);
     await tester.enterText(find.byType(TextFormField).first, 'test-user');
     expect(find.text('test-user'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('login history entry opens without affecting form input', (
+    tester,
+  ) async {
+    await tester.pumpWidget(loginHost());
+    await tester.tap(find.text('Open login'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'history-test-user',
+    );
+    await tester.tap(find.byTooltip('登录报错历史'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无登录报错记录'), findsOneWidget);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('history-test-user'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -305,6 +383,66 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       client.dio.close(force: true);
+    },
+  );
+
+  testWidgets(
+    'failed login saves all existing retries and opens their diagnostic',
+    (tester) async {
+      const username = 'history-401-user';
+      const password = 'PRIVATE_PASSWORD';
+      final client = ChangkeClient.getInstance(username: username);
+      final adapter = _RejectedLoginAdapter();
+      client.dio.httpClientAdapter = adapter;
+      client.casDio.httpClientAdapter = adapter;
+      final originalMainInterceptors = client.dio.interceptors.toList();
+      final originalCasInterceptors = client.casDio.interceptors.toList();
+      await tester.pumpWidget(loginHost());
+      await tester.tap(find.text('Open login'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).first, username);
+      await tester.enterText(find.byType(TextFormField).last, password);
+      final controller = tester
+          .state<GetBuilderState<LoginController>>(
+            find.byType(GetBuilder<LoginController>),
+          )
+          .controller!;
+      await tester.runAsync(() async {
+        await controller.submit().timeout(const Duration(seconds: 10));
+        await getStorage.save();
+      });
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(adapter.passwordSubmissions, 3);
+      expect(controller.isSubmitting.value, isFalse);
+      expect(client.dio.interceptors, orderedEquals(originalMainInterceptors));
+      expect(
+        client.casDio.interceptors,
+        orderedEquals(originalCasInterceptors),
+      );
+      final record = LoginErrorHistory.read().single;
+      expect(record.result, '登录失败');
+      expect(record.report, contains('HTTP: 401'));
+      expect(record.report, contains('第 3 轮登录尝试'));
+      for (final secret in [
+        username,
+        password,
+        'PRIVATE_STATE',
+        'PRIVATE_EXECUTION',
+      ]) {
+        expect(record.report, isNot(contains(secret)));
+      }
+      await tester.tap(find.byTooltip('登录报错历史'));
+      await tester.pumpAndSettle();
+      expect(find.text(record.report), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('关闭'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      client.dio.close(force: true);
+      client.casDio.close(force: true);
     },
   );
 }

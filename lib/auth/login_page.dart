@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:tronclass/auth/login_controller.dart';
+import 'package:tronclass/auth/login_error_history_dialog.dart';
 import 'package:tronclass/routes.dart';
 
 class LoginPage extends StatelessWidget {
@@ -52,7 +53,23 @@ class LoginPage extends StatelessWidget {
       ),
       builder: (controller) {
         return Scaffold(
-          appBar: AppBar(title: const Text('登录')),
+          appBar: AppBar(
+            title: const Text('登录'),
+            actions: [
+              Obx(
+                () => IconButton(
+                  tooltip: '登录报错历史',
+                  icon: const Icon(Icons.history),
+                  onPressed: controller.isSubmitting.value
+                      ? null
+                      : () => showDialog<void>(
+                          context: context,
+                          builder: (_) => const LoginErrorHistoryDialog(),
+                        ),
+                ),
+              ),
+            ],
+          ),
           bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
               ? null
               : SafeArea(
